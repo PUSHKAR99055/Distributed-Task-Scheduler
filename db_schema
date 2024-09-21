@@ -1,0 +1,9 @@
+CREATE TABLE tasks{
+    id SERIAL PRIMARY KEY,
+	command TEXT NOT NULL,
+	scheudled_at TIMESTAMP,
+	picket_at TIMESTAMP,
+	completed_at TIMESTAMP,
+	failed_at TIMESTAMP,
+	retries INT DEFAULT 0
+}
