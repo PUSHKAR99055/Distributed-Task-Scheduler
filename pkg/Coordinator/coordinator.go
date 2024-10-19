@@ -42,9 +42,11 @@ type CoordinatorServer struct {
 	roundRobinIndex     uint32
 	dbConnectionString  string
 	dbPool              *pgxpool.Pool
-	ctx                 context.Context    // The root context for all goroutines
-	cancel              context.CancelFunc // Function to cancel the context
-	wg                  sync.WaitGroup     // WaitGroup to wait for all goroutines to finish
+	ctx                 context.Context        // The root context for all goroutines
+	cancel              context.CancelFunc     // Function to cancel the context
+	wg                  sync.WaitGroup         // WaitGroup to wait for all goroutines to finish
+	taskQueue           chan *pb.TaskRequest   // Task queue to hold pending tasks
+	workerPool          map[uint32]*workerInfo // Track worker info as before
 }
 
 type workerInfo struct {
@@ -65,6 +67,7 @@ func NewServer(port string, dbConnectionString string) *CoordinatorServer {
 		serverPort:         port,
 		ctx:                ctx,
 		cancel:             cancel,
+		taskQueue:          make(chan *pb.TaskRequest, 100), // Queue with a capacity of 100
 	}
 }
 
@@ -150,12 +153,11 @@ func (s *CoordinatorServer) SubmitTask(ctx context.Context, in *pb.ClientTaskReq
 		Data:   data,
 	}
 
-	if err := s.submitTaskToWorker(task); err != nil {
-		return nil, err
-	}
+	// Add the task to the task queue instead of assigning it to a worker immediately
+	s.taskQueue <- task
 
 	return &pb.ClientTaskResponse{
-		Message: "Task submitted successfully",
+		Message: "Task submitted successfully and added to queue",
 		TaskId:  taskId,
 	}, nil
 }
@@ -328,17 +330,39 @@ func (s *CoordinatorServer) manageWorkerPool() {
 	s.wg.Add(1)
 	defer s.wg.Done()
 
-	ticker := time.NewTicker(time.Duration(s.maxHeartbeatMisses) * s.heartbeatInterval)
-	defer ticker.Stop()
-
 	for {
 		select {
-		case <-ticker.C:
-			s.removeInactiveWorkers()
+		case task := <-s.taskQueue: // Pull the next task from the queue
+			worker := s.getNextAvailableWorker()
+			if worker == nil {
+				log.Println("No available workers. Re-queueing task.")
+				s.taskQueue <- task // If no worker is available, re-add the task to the queue
+			} else {
+				// Assign the task to the available worker
+				go func(worker *workerInfo, task *pb.TaskRequest) {
+					if err := s.submitTaskToWorker(task); err != nil {
+						log.Printf("Failed to assign task %s to worker: %v\n", task.TaskId, err)
+						s.taskQueue <- task // Re-add the task to the queue if it fails
+					}
+				}(worker, task)
+			}
 		case <-s.ctx.Done():
-			return
+			return // Exit when the server is shutting down
 		}
 	}
+}
+
+func (s *CoordinatorServer) getNextAvailableWorker() *workerInfo {
+	s.WorkerPoolMutex.Lock()
+	defer s.WorkerPoolMutex.Unlock()
+
+	for _, worker := range s.WorkerPool {
+		if worker.heartbeatMisses == 0 {
+			return worker // Return the first worker with no missed heartbeats (indicating it's available)
+		}
+	}
+
+	return nil // No available worker
 }
 
 func (s *CoordinatorServer) removeInactiveWorkers() {
