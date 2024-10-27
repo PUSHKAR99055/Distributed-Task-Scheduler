@@ -217,6 +217,27 @@ func (s *CoordinatorServer) submitTaskToWorker(task *pb.TaskRequest) error {
 	return err
 }
 
+func (s *CoordinatorServer) RequestTask(ctx context.Context, req *pb.TaskRequest) (*pb.TaskRequestResponse, error) {
+	// Lock to safely access the task queue
+	s.WorkerPoolMutex.Lock()
+	defer s.WorkerPoolMutex.Unlock()
+
+	var task *pb.TaskRequest
+	// Check if there are tasks in the queue
+	if len(s.taskQueue) > 0 {
+		// Pop a task from the queue
+		task = s.taskQueue[0]
+		s.taskQueue = s.taskQueue[1:]
+	} else {
+		// No task available
+		task = nil
+	}
+
+	return &pb.TaskRequestResponse{
+		Task: task,
+	}, nil
+}
+
 func (s *CoordinatorServer) SendHeartbeat(ctx context.Context, in *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	s.WorkerPoolMutex.Lock()
 	defer s.WorkerPoolMutex.Unlock()

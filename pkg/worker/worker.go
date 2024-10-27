@@ -88,6 +88,31 @@ func (w *WorkerServer) connectToCoordinator() error {
 	return nil
 }
 
+func (w *WorkerServer) requestTaskFromCoordinator() {
+	for {
+		select {
+		case <-w.ctx.Done():
+			return // Stop when context is canceled
+		default:
+			// Request a task from the coordinator
+			resp, err := w.coordinatorClient.RequestTask(context.Background(), &pb.TaskRequestRequest{})
+			if err != nil {
+				log.Printf("Failed to request task: %v", err)
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			if resp.Task != nil {
+				// Process the task if received
+				w.processTask(resp.Task)
+			} else {
+				// Sleep and retry if no task is available
+				time.Sleep(1 * time.Second)
+			}
+		}
+	}
+}
+
 func (w *WorkerServer) periodicHeartbeat() {
 	w.wg.Add(1)       // Add this goroutine to the waitgroup.
 	defer w.wg.Done() // Signal this goroutine is done when the function returns
