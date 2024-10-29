@@ -11,6 +11,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"container/heap"
+	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -27,6 +29,70 @@ const (
 	defaultMaxMisses = 1
 	scanInterval     = 10 * time.Second
 )
+
+// TaskPriorityQueue is a priority queue based on task priority.
+type TaskPriorityQueue []*Task
+
+func (pq TaskPriorityQueue) Len() int { return len(pq) }
+
+func (pq TaskPriorityQueue) Less(i, j int) bool {
+	return pq[i].Priority > pq[j].Priority // Higher priority tasks come first
+}
+
+func (pq TaskPriorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+}
+
+func (pq *TaskPriorityQueue) Push(x interface{}) {
+	item := x.(*Task)
+	*pq = append(*pq, item)
+}
+
+func (pq *TaskPriorityQueue) Pop() interface{} {
+	old := *pq
+	n := len(old)
+	item := old[n-1]
+	*pq = old[0 : n-1]
+	return item
+}
+
+// CoordinatorServer struct with TaskPriorityQueue
+type CoordinatorServer struct {
+	taskQueue      TaskPriorityQueue
+	taskQueueMutex sync.Mutex
+}
+Step 3: Add Tasks to Priority Queue
+When a new task arrives, push it onto the priority queue. Lock the queue during modifications to handle concurrent access.
+
+go
+Copy code
+func (s *CoordinatorServer) AddTask(task *Task) {
+	s.taskQueueMutex.Lock()
+	defer s.taskQueueMutex.Unlock()
+	heap.Push(&s.taskQueue, task)
+}
+Step 4: Modify RequestTask to Get Tasks by Priority
+Update the RequestTask method to fetch the highest-priority task available.
+
+go
+Copy code
+func (s *CoordinatorServer) RequestTask(ctx context.Context, req *pb.TaskRequestRequest) (*pb.TaskRequestResponse, error) {
+	s.taskQueueMutex.Lock()
+	defer s.taskQueueMutex.Unlock()
+
+	if s.taskQueue.Len() > 0 {
+		task := heap.Pop(&s.taskQueue).(*Task)
+		return &pb.TaskRequestResponse{
+			Task: &pb.TaskRequest{
+				TaskId: task.ID,
+				Data:   task.Data,
+			},
+		}, nil
+	}
+
+	// Return nil if no tasks are available
+	return &pb.TaskRequestResponse{Task: nil}, nil
+}
 
 type CoordinatorServer struct {
 	pb.UnimplementedCoordinatorServiceServer
