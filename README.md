@@ -1,10 +1,12 @@
 # Distributed-Task-Scheduler
 
-When trying to replicate it keep in mind of few common errors: 
+When trying to replicate it please keep in mind of few common errors: 
 
 * build.sh file might have CRLF line endings which will throw error
 * add go to your env path --> $env:PATH += ";$(go env GOPATH)\bin"
 * if needed I would suggest to regenerate api.pb.go and api_grpc.pb.go file along with go.mod and go.sum as there could be version mismatch issues
+
+I wanted to work on a distributed task scheduler especially with golang because it gives me better understanding of how golang is in many ways self sufficent building bigger projects and distributed computing interests me. I still have to add many more fetaures keeping myself ditant from production level ones 
 
 --TODO
 
