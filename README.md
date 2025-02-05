@@ -1,5 +1,11 @@
 # Distributed-Task-Scheduler
 
+When trying to replicate it keep in mind of few common errors: 
+
+* build.sh file might have CRLF line endings which will throw error
+* add go to your env path --> $env:PATH += ";$(go env GOPATH)\bin"
+* if needed I would suggest to regenerate api.pb.go and api_grpc.pb.go file along with go.mod and go.sum as there could be version mismatch issues
+
 --TODO
 
 Architecture
